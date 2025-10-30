@@ -58,6 +58,7 @@ bool trap_in_kernel(struct trapframe *tf) {
     return (tf->status & SSTATUS_SPP) != 0;
 }
 
+// show trapframe,including reg status and four key flag,36 uintptr_t s,32(struct trapframe)+4
 void print_trapframe(struct trapframe *tf) {
     cprintf("trapframe at %p\n", tf);
     print_regs(&tf->gpr);
@@ -121,6 +122,7 @@ void interrupt_handler(struct trapframe *tf) {
             cprintf("User Timer interrupt\n");
             break;
         case IRQ_S_TIMER:
+            //0x80000005,Supervisor timer interrupt
             // "All bits besides SSIP and USIP in the sip register are
             // read-only." -- privileged spec1.9.1, 4.1.4, p59
             // In fact, Call sbi_set_timer will clear STIP, or you can clear it
@@ -193,6 +195,10 @@ void exception_handler(struct trapframe *tf) {
             cprintf("Exception type: breakpoint\n");
             cprintf("ebreak caught at 0x%08x\n", tf->epc);
             tf->epc += 2;  // 跳过断点指令，继续执行下一条指令
+            //usually,an ebreak inst is encoded as a compressed inst with a length of 2B in RISC-V
+            //compressed inst:0x9002,else:0x00100073
+            //also,such a handle is compatible with standard inst with a length of 4B,for there is usually
+            //some nop after an standard ebreak for alignment or other insts 
             break;
         case CAUSE_MISALIGNED_LOAD:
             break;
@@ -217,6 +223,8 @@ void exception_handler(struct trapframe *tf) {
 }
 
 static inline void trap_dispatch(struct trapframe *tf) {
+    //originally,tf is an uintptr_t,whose highest bit destined the cause for interrupts(1) and exceptions(0)
+    //when tis converted to an intptr_t,the highest bit destined the sign,(interrupts,1)for a negate
     if ((intptr_t)tf->cause < 0) {
         // interrupts
         interrupt_handler(tf);
