@@ -73,7 +73,8 @@ best_fit_init_memmap(struct Page *base, size_t n) {
     for (; p != base + n; p ++) {
         assert(PageReserved(p));
         /*LAB2 请补充你在lab2中的代码 */ 
-        
+        p->flags = p->property = 0;
+        set_page_ref(p, 0);
     }
     base->property = n;
     SetPageProperty(base);
@@ -85,7 +86,12 @@ best_fit_init_memmap(struct Page *base, size_t n) {
         while ((le = list_next(le)) != &free_list) {
             struct Page* page = le2page(le, page_link);
             /*LAB2 请补充你在lab2中的代码 */ 
-
+            if (base < page) {
+                list_add_before(le, &(base->page_link));
+                break;
+            } else if (list_next(le) == &free_list) {
+                list_add(le, &(base->page_link));
+            }
         }
     }
 }
@@ -103,9 +109,10 @@ best_fit_alloc_pages(size_t n) {
 
     while ((le = list_next(le)) != &free_list) {
         struct Page *p = le2page(le, page_link);
-        if (p->property >= n) {
+        if (p->property >= n && p->property < min_size) {
             page = p;
-            break;
+            min_size = p->property;
+            //break;
         }
     }
 
@@ -134,6 +141,9 @@ best_fit_free_pages(struct Page *base, size_t n) {
         set_page_ref(p, 0);
     }
     /*LAB2 请补充你在lab2中的代码*/
+    base->property = n;
+    SetPageProperty(base);
+    nr_free += n;
 
     if (list_empty(&free_list)) {
         list_add(&free_list, &(base->page_link));
@@ -154,7 +164,12 @@ best_fit_free_pages(struct Page *base, size_t n) {
     if (le != &free_list) {
         p = le2page(le, page_link);
         /*LAB2 请补充你在lab2中的代码*/
-        
+        if (p + p->property == base) {
+            p->property += base->property;
+            ClearPageProperty(base);
+            list_del(&(base->page_link));
+            base = p;
+        }
     }
 
     le = list_next(&(base->page_link));
