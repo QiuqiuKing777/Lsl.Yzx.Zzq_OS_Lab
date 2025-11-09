@@ -13,6 +13,7 @@
 #include <riscv.h>
 #include <dtb.h>
 
+//ins or del a project of pages in page table:page_init,page_remove
 // virtual address of physical page array
 struct Page *pages;
 // amount of physical memory (in pages)
@@ -220,22 +221,25 @@ void pmm_init(void)
 //  la:     the linear address need to map
 //  create: a logical value to decide if alloc a page for PT
 // return vaule: the kernel virtual address of this pte
+//according to linear addr,get the pte
 pte_t *get_pte(pde_t *pgdir, uintptr_t la, bool create)
 {
-    pde_t *pdep1 = &pgdir[PDX1(la)];
-    if (!(*pdep1 & PTE_V))
+    pde_t *pdep1 = &pgdir[PDX1(la)];//pdx//find giga page//level 1
+    if (!(*pdep1 & PTE_V))//valid
     {
         struct Page *page;
-        if (!create || (page = alloc_page()) == NULL)
+        if (!create || (page = alloc_page()) == NULL)//if create==T,create,else return null
         {
             return NULL;
         }
+        //init
         set_page_ref(page, 1);
         uintptr_t pa = page2pa(page);
         memset(KADDR(pa), 0, PGSIZE);
         *pdep1 = pte_create(page2ppn(page), PTE_U | PTE_V);
     }
-    pde_t *pdep0 = &((pte_t *)KADDR(PDE_ADDR(*pdep1)))[PDX0(la)];
+    pde_t *pdep0 = &((pte_t *)KADDR(PDE_ADDR(*pdep1)))[PDX0(la)];//level 2//find big page
+    //same as before
     if (!(*pdep0 & PTE_V))
     {
         struct Page *page;
@@ -248,7 +252,7 @@ pte_t *get_pte(pde_t *pgdir, uintptr_t la, bool create)
         memset(KADDR(pa), 0, PGSIZE);
         *pdep0 = pte_create(page2ppn(page), PTE_U | PTE_V);
     }
-    return &((pte_t *)KADDR(PDE_ADDR(*pdep0)))[PTX(la)];
+    return &((pte_t *)KADDR(PDE_ADDR(*pdep0)))[PTX(la)];//pte of la,level 3,before offset,get the pte
 }
 
 // get_page - get related Page struct for linear address la using PDT pgdir
@@ -274,10 +278,9 @@ static inline void page_remove_pte(pde_t *pgdir, uintptr_t la, pte_t *ptep)
     if (*ptep & PTE_V)
     { //(1) check if this page table entry is
         struct Page *page =
-            pte2page(*ptep); //(2) find corresponding page to pte
-        page_ref_dec(page);  //(3) decrease page reference
-        if (page_ref(page) ==
-            0)
+            pte2page(*ptep); //(2) find corresponding page to pte (pte->phy page)
+        page_ref_dec(page);  //(3) decrease page reference      //de ref
+        if (page_ref(page) == 0)//if all ref sbeen removed
         { //(4) and free this page when page reference reachs 0
             free_page(page);
         }
@@ -305,27 +308,29 @@ void page_remove(pde_t *pgdir, uintptr_t la)
 //  perm:  the permission of this Page which is setted in related pte
 // return value: always 0
 // note: PT is changed, so the TLB need to be invalidate
+//form a project from va 2 physical page
 int page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm)
-{
+{   
+    //get the pte pointer
     pte_t *ptep = get_pte(pgdir, la, 1);
     if (ptep == NULL)
     {
-        return -E_NO_MEM;
+        return -E_NO_MEM;// Request failed due to memory shortage
     }
-    page_ref_inc(page);
+    page_ref_inc(page);//more ref,when removing an 0,
     if (*ptep & PTE_V)
     {
         struct Page *p = pte2page(*ptep);
-        if (p == page)
+        if (p == page)//projecting to the same page
         {
             page_ref_dec(page);
         }
-        else
+        else//projecting to the other page,remove old prj
         {
             page_remove_pte(pgdir, la, ptep);
         }
     }
-    *ptep = pte_create(page2ppn(page), PTE_V | perm);
+    *ptep = pte_create(page2ppn(page), PTE_V | perm);//create a new pte
     tlb_invalidate(pgdir, la);
     return 0;
 }
@@ -347,31 +352,33 @@ static void check_alloc_page(void)
 
 static void check_pgdir(void)
 {
-    // assert(npage <= KMEMSIZE / PGSIZE);
+    // assert(npage <= KernMEMSIZE / PGSIZE);//KMEMSIZE 0x7E00000,the maximum amount of physical memory
     // The memory starts at 2GB in RISC-V
     // so npage is always larger than KMEMSIZE / PGSIZE
     size_t nr_free_store;
 
-    nr_free_store = nr_free_pages();
+    nr_free_store = nr_free_pages();//original free pages num
 
-    assert(npage <= KERNTOP / PGSIZE);
-    assert(boot_pgdir_va != NULL && (uint32_t)PGOFF(boot_pgdir_va) == 0);
-    assert(get_page(boot_pgdir_va, 0x0, NULL) == NULL);
+    //check assertion
+    assert(npage <= KERNTOP / PGSIZE);//p page not over pm top
+    assert(boot_pgdir_va != NULL && (uint32_t)PGOFF(boot_pgdir_va) == 0);//page directory addr valid and aligned
+    assert(get_page(boot_pgdir_va, 0x0, NULL) == NULL);//addr 0 not projected
 
     struct Page *p1, *p2;
-    p1 = alloc_page();
+    p1 = alloc_page();//emu alloc a page and conduct some test
     assert(page_insert(boot_pgdir_va, p1, 0x0, 0) == 0);
 
     pte_t *ptep;
     assert((ptep = get_pte(boot_pgdir_va, 0x0, 0)) != NULL);
-    assert(pte2page(*ptep) == p1);
-    assert(page_ref(p1) == 1);
+    assert(pte2page(*ptep) == p1);//right ptr?
+    assert(page_ref(p1) == 1);//referred?
 
     ptep = (pte_t *)KADDR(PDE_ADDR(boot_pgdir_va[0]));
-    ptep = (pte_t *)KADDR(PDE_ADDR(ptep[0])) + 1;
-    assert(get_pte(boot_pgdir_va, PGSIZE, 0) == ptep);
+    ptep = (pte_t *)KADDR(PDE_ADDR(ptep[0])) + 1;//next PTE
+    assert(get_pte(boot_pgdir_va, PGSIZE, 0) == ptep);//whether hand get pt same as api
 
-    p2 = alloc_page();
+    //check privilege
+    p2 = alloc_page();//alloc another one
     assert(page_insert(boot_pgdir_va, p2, PGSIZE, PTE_U | PTE_W) == 0);
     assert((ptep = get_pte(boot_pgdir_va, PGSIZE, 0)) != NULL);
     assert(*ptep & PTE_U);
@@ -379,6 +386,7 @@ static void check_pgdir(void)
     assert(boot_pgdir_va[0] & PTE_U);
     assert(page_ref(p2) == 1);
 
+    //prj overlap
     assert(page_insert(boot_pgdir_va, p1, PGSIZE, 0) == 0);
     assert(page_ref(p1) == 2);
     assert(page_ref(p2) == 0);
@@ -386,6 +394,7 @@ static void check_pgdir(void)
     assert(pte2page(*ptep) == p1);
     assert((*ptep & PTE_U) == 0);
 
+    //remove_test
     page_remove(boot_pgdir_va, 0x0);
     assert(page_ref(p1) == 1);
     assert(page_ref(p2) == 0);
@@ -396,6 +405,7 @@ static void check_pgdir(void)
 
     assert(page_ref(pde2page(boot_pgdir_va[0])) == 1);
 
+    //check free,check mem leak
     pde_t *pd1 = boot_pgdir_va, *pd0 = page2kva(pde2page(boot_pgdir_va[0]));
     free_page(pde2page(pd0[0]));
     free_page(pde2page(pd1[0]));
