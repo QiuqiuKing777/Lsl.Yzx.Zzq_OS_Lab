@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <assert.h>
 
+/* implement creat\init\exit of proc/thread */
 /* ------------- process/thread mechanism design&implementation -------------
 (an simplified Linux process/thread mechanism )
 introduction:
@@ -62,7 +63,7 @@ SYS_getpid      : get the process's pid
 list_entry_t proc_list;
 
 #define HASH_SHIFT 10
-#define HASH_LIST_SIZE (1 << HASH_SHIFT)
+#define HASH_LIST_SIZE (1 << HASH_SHIFT)//size of hash list macro,2^10,1k
 #define pid_hashfn(x) (hash32(x, HASH_SHIFT))
 
 // has list for process set based on pid
@@ -109,7 +110,7 @@ alloc_proc(void)
         // 初始化进程ID为-1（无效ID）
         proc->pid = -1;
         // 使用内核页目录表的基址
-        proc->pgdir = boot_pgdir_pa;     
+        proc->pgdir = boot_pgdir_pa;//turned into uninit status     
         // 初始化运行次数为0
         proc->runs = 0;
         // 初始化内核栈地址为0
@@ -198,7 +199,7 @@ void proc_run(struct proc_struct *proc)
 {
     if (proc != current)
     {
-        // LAB4:EXERCISE3 your code
+        // LAB4:EXERCISE3 2312796
         /*
          * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
          * MACROs or Functions:
@@ -207,17 +208,36 @@ void proc_run(struct proc_struct *proc)
          *   lsatp():                   Modify the value of satp register
          *   switch_to():              Context switching between two processes
          */
-       
+        bool intr_flag;
+        struct proc_struct *prev = current;  // save current proc//Line 77
+        struct proc_struct *next = proc;     // set proc to switch
+        // ban trap
+        local_intr_save(intr_flag);
+        // switch nowa proc to which to run
+        current = proc;
+        // switch pgdir,to new space
+        // as for kernel t,pgdir could be NULL,employ boot_pgdir_pa
+        if (proc->pgdir != 0) {
+            lsatp(proc->pgdir);  // load padir 2 satp of new proc
+        } else {
+            lsatp(boot_pgdir_pa);  // pgdir of kernel t
+        }
+        // call switch
+        switch_to(&(prev->context), &(next->context));//in switch.S,store and load some reg
+                                                      //callee-saved reg only ra,sp,s0-s11
+        // finished switch,the previously banned trap turns sound
+        local_intr_restore(intr_flag);
     }
 }
 
 // forkret -- the first kernel entry point of a new thread/process
 // NOTE: the addr of forkret is setted in copy_thread function
 //       after switch_to, the current proc will execute here.
+//
 static void
 forkret(void)
 {
-    forkrets(current->tf);
+    forkrets(current->tf);//set stack to this new process's trapframe
 }
 
 // hash_proc - add proc into proc hash_list
@@ -250,13 +270,17 @@ find_proc(int pid)
 // NOTE: the contents of temp trapframe tf will be copied to
 //       proc->tf in do_fork-->copy_thread function
 int kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags)
-{
+{   
+    //maintaining the tf
     struct trapframe tf;
+    //construct a void tf manually
     memset(&tf, 0, sizeof(struct trapframe));
     tf.gpr.s0 = (uintptr_t)fn;
     tf.gpr.s1 = (uintptr_t)arg;
+    //SPP=1(supervisor),spie=1(4 kernel th),sie=0(we dont hope this t trapped)
     tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE;
-    tf.epc = (uintptr_t)kernel_thread_entry;
+    tf.epc = (uintptr_t)kernel_thread_entry;//here,we move a0,s1,passing a para arg
+    //             0             0x00000100
     return do_fork(clone_flags | CLONE_VM, 0, &tf);
 }
 
@@ -294,7 +318,8 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc)
 //             - setup the kernel entry point and stack of process
 static void
 copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf)
-{
+{   
+    //set stack top
     proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE - sizeof(struct trapframe));
     *(proc->tf) = *tf;
 
@@ -302,7 +327,9 @@ copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf)
     proc->tf->gpr.a0 = 0;
     proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp;
 
-    proc->context.ra = (uintptr_t)forkret;
+    proc->context.ra = (uintptr_t)forkret;//simulating as if twas returned from a trap handle
+                                          //ask forkret to finish the task setting all necessary regs
+                                          //used in proc_run
     proc->context.sp = (uintptr_t)(proc->tf);
 }
 
@@ -338,7 +365,7 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
      *   nr_process:   the number of process set
      */
 
-         //    1. call alloc_proc to allocate a proc_struct
+    //    1. call alloc_proc to allocate a proc_struct
     if ((proc = alloc_proc()) == NULL) {
         goto fork_out;
     }
@@ -351,6 +378,7 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
         goto bad_fork_cleanup_kstack;
     }
     //    4. call copy_thread to setup tf & context in proc_struct
+    //here we set the context.re<-forkret
     copy_thread(proc, stack, tf);
     //    5. insert proc_struct into hash_list && proc_list
     bool intr_flag;
@@ -366,10 +394,8 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
     //    7. set ret vaule using child proc's pid
     ret = proc->pid;
     
-
 fork_out:
     return ret;
-
 bad_fork_cleanup_kstack:
     put_kstack(proc);
 bad_fork_cleanup_proc:
@@ -398,17 +424,18 @@ init_main(void *arg)
 
 // proc_init - set up the first kernel thread idleproc "idle" by itself and
 //           - create the second kernel thread init_main
+//for the z one
 void proc_init(void)
 {
     int i;
-
+    //init proc list//mark and trace each proc
     list_init(&proc_list);
-    for (i = 0; i < HASH_LIST_SIZE; i++)
+    for (i = 0; i < HASH_LIST_SIZE; i++)//1k
     {
-        list_init(hash_list + i);
+        list_init(hash_list + i);//them seems not linked,when used,they get linked
     }
 
-    if ((idleproc = alloc_proc()) == NULL)
+    if ((idleproc = alloc_proc()) == NULL)//alloc
     {
         panic("cannot alloc idleproc.\n");
     }
@@ -427,15 +454,17 @@ void proc_init(void)
         cprintf("alloc_proc() correct!\n");
     }
 
-    idleproc->pid = 0;
-    idleproc->state = PROC_RUNNABLE;
-    idleproc->kstack = (uintptr_t)bootstack;
-    idleproc->need_resched = 1;
+    idleproc->pid = 0;//a leagal pid
+    idleproc->state = PROC_RUNNABLE;//change status
+    idleproc->kstack = (uintptr_t)bootstack;//set kstack//for other proc,it should be gain especially,
+                                            //while as for the first one,that set when ucore runs was allocated
+    idleproc->need_resched = 1;//once set,schedule() in init.c::cpu_idle() would be call:"im free,make me useful"
     set_proc_name(idleproc, "idle");
     nr_process++;
 
     current = idleproc;
-
+    //----------below are initproc
+    //                      fun2runInTh//para2init_main
     int pid = kernel_thread(init_main, "Hello world!!", 0);
     if (pid <= 0)
     {
@@ -454,9 +483,9 @@ void cpu_idle(void)
 {
     while (1)
     {
-        if (current->need_resched)
+        if (current->need_resched)//when no other thread,free for
         {
-            schedule();
+            schedule();//choose runnable thread and switch,control->initproc
         }
     }
 }
