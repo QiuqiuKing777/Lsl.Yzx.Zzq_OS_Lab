@@ -36,12 +36,12 @@ int kern_init(void)
     idt_init(); // init interrupt descriptor table
 
     vmm_init();  // init virtual memory management
-    proc_init(); // init process table
+    proc_init(); // init process table //set current->need_resched in cpu_idle() to 1
 
     clock_init();  // init clock interrupt
     intr_enable(); // enable irq interrupt
-
-    cpu_idle(); // run idle process
+    //
+    cpu_idle(); // run idle process // added in Lab4,schedule()
 }
 
 static void
