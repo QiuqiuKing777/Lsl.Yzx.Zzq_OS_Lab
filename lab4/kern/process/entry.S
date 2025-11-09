@@ -5,3 +5,4 @@ kernel_thread_entry:        # void kernel_thread(void)
 	jalr s0
 
 	jal do_exit
+ # entry func
