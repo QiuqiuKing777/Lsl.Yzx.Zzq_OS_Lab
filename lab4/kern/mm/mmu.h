@@ -21,23 +21,26 @@
 // RISC-V uses 32-bit virtual address to access 34-bit physical address!
 // Sv32 page table entry:
 // +---------12----------+--------10-------+---2----+-------8-------+
-// |       PPN[1]        |      PPN[0]     |Reserved|D|A|G|U|X|W|R|V|
+// |  PhysicalPageNum[1] |      PPN[0]     |Reserved|D|A|G|U|X|W|R|V|
 // +---------12----------+-----------------+--------+---------------+
 
-// page directory index
-#define PDX1(la) ((((uintptr_t)(la)) >> PDX1SHIFT) & 0x1FF)
+// get page directory index
+                                      //30  
+#define PDX1(la) ((((uintptr_t)(la)) >> PDX1SHIFT) & 0x1FF)//0000000111111111,to lower bit
+                                      //21  
 #define PDX0(la) ((((uintptr_t)(la)) >> PDX0SHIFT) & 0x1FF)
 
-// page table index
+// get page table index
 #define PTX(la) ((((uintptr_t)(la)) >> PTXSHIFT) & 0x1FF)
 
-// page number field of address
+// get page number field of address
 #define PPN(la) (((uintptr_t)(la)) >> PTXSHIFT)
 
 // offset in page
 #define PGOFF(la) (((uintptr_t)(la)) & 0xFFF)
 
 // construct linear address from indexes and offset
+//to wit:some offset->vm                          30                 21                 12   
 #define PGADDR(d1, d0, t, o) ((uintptr_t)((d1) << PDX1SHIFT |(d0) << PDX0SHIFT | (t) << PTXSHIFT | (o)))
 
 // address in page table or page directory entry
@@ -58,7 +61,7 @@
 #define PDX1SHIFT		30
 #define PTE_PPN_SHIFT   10                      // offset of PPN in a physical address
 
-// page table entry (PTE) fields
+// page table entry (PTE) fields,flags
 #define PTE_V     0x001 // Valid
 #define PTE_R     0x002 // Read
 #define PTE_W     0x004 // Write
@@ -69,6 +72,7 @@
 #define PTE_D     0x080 // Dirty
 #define PTE_SOFT  0x300 // Reserved for Software
 
+//set some privilege and rights,if T then OK
 #define PAGE_TABLE_DIR (PTE_V)
 #define READ_ONLY (PTE_R | PTE_V)
 #define READ_WRITE (PTE_R | PTE_W | PTE_V)
