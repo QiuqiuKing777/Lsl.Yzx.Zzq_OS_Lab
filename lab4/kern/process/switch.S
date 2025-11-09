@@ -1,10 +1,12 @@
 #include <riscv.h>
 
+# implement:switch content,store and restore content with heap n stack
+
 .text
 # void switch_to(struct proc_struct* from, struct proc_struct* to)
 .globl switch_to
 switch_to:
-    # save from's registers
+    # save from's registers #save regs into a0+(i*REGBYTES)
     STORE ra, 0*REGBYTES(a0)
     STORE sp, 1*REGBYTES(a0)
     STORE s0, 2*REGBYTES(a0)
@@ -20,7 +22,7 @@ switch_to:
     STORE s10, 12*REGBYTES(a0)
     STORE s11, 13*REGBYTES(a0)
 
-    # restore to's registers
+    # restore to's registers #read into regs
     LOAD ra, 0*REGBYTES(a1)
     LOAD sp, 1*REGBYTES(a1)
     LOAD s0, 2*REGBYTES(a1)
@@ -36,4 +38,5 @@ switch_to:
     LOAD s10, 12*REGBYTES(a1)
     LOAD s11, 13*REGBYTES(a1)
 
+    # when proc_running init_proc,ret addr:forkret,__trapret
     ret
