@@ -110,6 +110,8 @@ __trapret:
     sret
  
     .globl forkrets
+
+# added in Lab4,in handle of do_fork return
 forkrets:
     # set stack to this new process's trapframe
     move sp, a0
