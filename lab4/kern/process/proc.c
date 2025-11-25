@@ -209,17 +209,19 @@ void proc_run(struct proc_struct *proc)
          *   switch_to():              Context switching between two processes
          */
         bool intr_flag;
+        //保存当前进程
         struct proc_struct *prev = current;  // save current proc//Line 77
+        //设置要切换的进程
         struct proc_struct *next = proc;     // set proc to switch
-        // ban trap
+        // ban trap 关中断以保护临界区
         local_intr_save(intr_flag);
-        // switch nowa proc to which to run
+        // switch nowa proc to which to run 切换当前进程为next进程
         current = proc;
-        // switch pgdir,to new space
+        // switch pgdir,to new space 将新进程的页目录加载到satp寄存器中
         // as for kernel t,pgdir could be NULL,employ boot_pgdir_pa
-        if (proc->pgdir != 0) {
+        if (proc->pgdir != 0) {// 不是内核进程，则加载页目录
             lsatp(proc->pgdir);  // load padir 2 satp of new proc
-        } else {
+        } else { //若为内核进程，则加载基址为boot_pgdir_pa的页目录
             lsatp(boot_pgdir_pa);  // pgdir of kernel t
         }
         // call switch
@@ -319,17 +321,19 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc)
 static void
 copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf)
 {   
-    //set stack top
+    //set stack top 设置内核栈顶
     proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE - sizeof(struct trapframe));
     *(proc->tf) = *tf;
 
-    // Set a0 to 0 so a child process knows it's just forked
+    // Set a0 to 0 so a child process knows it's just forked 设置a0为0，让子进程知道它刚刚被fork出来，告诉自己它是个子进程
     proc->tf->gpr.a0 = 0;
+    // 根据esp参数设置用户栈指针，如果esp为0，则将栈指针设置为trapframe的地址，否则设置为esp的值
     proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp;
-
+    // 设置进程的上下文，使其在切换到该进程时从forkret函数开始执行
     proc->context.ra = (uintptr_t)forkret;//simulating as if twas returned from a trap handle
                                           //ask forkret to finish the task setting all necessary regs
                                           //used in proc_run
+    // 设置进程的栈指针为trapframe的地址
     proc->context.sp = (uintptr_t)(proc->tf);
 }
 
@@ -338,6 +342,7 @@ copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf)
  * @stack:       the parent's user stack pointer. if stack==0, It means to fork a kernel thread.
  * @tf:          the trapframe info, which will be copied to child process's proc->tf
  */
+//用于创建一个新的子进程
 int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
 {
     int ret = -E_NO_FREE_PROC;
@@ -365,22 +370,22 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
      *   nr_process:   the number of process set
      */
 
-    //    1. call alloc_proc to allocate a proc_struct
+    //    1. call alloc_proc to allocate a proc_struct分配并初始化进程控制块
     if ((proc = alloc_proc()) == NULL) {
         goto fork_out;
     }
-    //    2. call setup_kstack to allocate a kernel stack for child process
+    //    2. call setup_kstack to allocate a kernel stack for child process分配并初始化内核栈
     if (setup_kstack(proc) != 0) {
         goto bad_fork_cleanup_proc;
     }
-    //    3. call copy_mm to dup OR share mm according clone_flag
+    //    3. call copy_mm to dup OR share mm according clone_flags根据clone_flags决定是复制还是共享内存管理系统
     if (copy_mm(clone_flags, proc) != 0) {
         goto bad_fork_cleanup_kstack;
     }
     //    4. call copy_thread to setup tf & context in proc_struct
-    //here we set the context.re<-forkret
+    //here we set the context.re<-fork  ret设置进程的中断帧和上下文
     copy_thread(proc, stack, tf);
-    //    5. insert proc_struct into hash_list && proc_list
+    //    5. insert proc_struct into hash_list && proc_list  把设置好的进程加入链表
     bool intr_flag;
     local_intr_save(intr_flag);  // 关中断，保护临界区
     proc->pid = get_pid();
@@ -389,16 +394,16 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
     list_add(&proc_list, &(proc->list_link));
     nr_process++;
     local_intr_restore(intr_flag);
-    //    6. call wakeup_proc to make the new child process RUNNABLE
+    //    6. call wakeup_proc to make the new child process RUNNABLE将新建的进程设为就绪态
     wakeup_proc(proc);
-    //    7. set ret vaule using child proc's pid
+    //    7. set ret vaule using child proc's pid将返回值设为线程id
     ret = proc->pid;
     
-fork_out:
+fork_out://正常返回
     return ret;
-bad_fork_cleanup_kstack:
+bad_fork_cleanup_kstack://出错处理，释放内核栈
     put_kstack(proc);
-bad_fork_cleanup_proc:
+bad_fork_cleanup_proc://出错处理，释放进程控制块
     kfree(proc);
     goto fork_out;
 }

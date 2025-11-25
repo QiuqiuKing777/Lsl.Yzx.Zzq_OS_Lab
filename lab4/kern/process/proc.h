@@ -41,16 +41,16 @@ extern list_entry_t proc_list;
 
 struct proc_struct
 {
-    enum proc_state state;        // Process state
-    int pid;                      // Process ID
-    int runs;                     // the running times of Proces
-    uintptr_t kstack;             // Process kernel stack
-    volatile bool need_resched;   // bool value: need to be rescheduled to release CPU?
+    enum proc_state state;        // Process state(进程状态)
+    int pid;                      // Process ID（PID）
+    int runs;                     // the running times of Proces（运行次数）
+    uintptr_t kstack;             // Process kernel stack（进程内核栈）
+    volatile bool need_resched;   // bool value: need to be rescheduled to release CPU?（是否需要重新调度以释放CPU）
     struct proc_struct *parent;   // the parent process
-    struct mm_struct *mm;         // Process's memory management field
-    struct context context;       // Switch here to run process
-    struct trapframe *tf;         // Trap frame for current interrupt
-    uintptr_t pgdir;              // the base addr of Page Directroy Table(PDT)
+    struct mm_struct *mm;         // Process's memory management field（内存管理）
+    struct context context;       // Switch here to run process（上下文）
+    struct trapframe *tf;         // Trap frame for current interrupt（中断帧）
+    uintptr_t pgdir;              // the base addr of Page Directroy Table(PDT)（页目录基址）
     uint32_t flags;               // Process flag
     char name[PROC_NAME_LEN + 1]; // Process name
     list_entry_t list_link;       // Process link list
