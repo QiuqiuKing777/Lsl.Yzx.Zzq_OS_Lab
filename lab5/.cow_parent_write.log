@@ -47,10 +47,11 @@ kmalloc_init() succeeded!
 check_vma_struct() succeeded!
 check_vmm() succeeded.
 ++ setup timer interrupts
-kernel_execve: pid = 2, name = "pgdir".
+kernel_execve: pid = 2, name = "cow_parent_write".
 Breakpoint
-I am 2, print pgdir.
-pgdir pass.
+[cow_parent_write] start pid=2 x=2 (addr=0x7fffffd8)
+[parent_write-parent] pid=2 wrote x=200
+[parent_write-child] pid=3 sees x=200
 all user-mode processes have quit.
 init check memory pass.
 kernel panic at kern/process/proc.c:542:

@@ -404,7 +404,7 @@ int copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end,
             assert(page != NULL);
             assert(npage != NULL);
             int ret = 0;
-            /* LAB5:EXERCISE2 2312323
+            /* LAB5:EXERCISE2 2312796
              * replicate content of page to npage, build the map of phy addr of
              * nage with the linear addr start
              *
@@ -422,17 +422,22 @@ int copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end,
              * (3) memory copy from src_kvaddr to dst_kvaddr, size is PGSIZE
              * (4) build the map of phy addr of  nage with the linear addr start
              */
-            // (1) kernel virtual address of src page
-            uintptr_t *src_kvaddr = page2kva(page);
-            // (2) kernel virtual address of new page
-            uintptr_t *dst_kvaddr = page2kva(npage);
-
-            // (3) copy one page content
-            memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
-
-            // (4) insert mapping into dst pgdir
-            ret = page_insert(to, npage, start, perm);
-            assert(ret == 0);
+            if (share) {
+                // Only writable pages need COW. Read-only pages can be shared directly.
+                if (perm & PTE_W) {
+                    perm = (perm & ~PTE_W) | PTE_COW;
+                    // update parent's mapping to be COW as well
+                    *ptep = (*ptep & ~PTE_W) | PTE_COW;
+                    tlb_invalidate(from, start);
+                }
+                ret = page_insert(to, page, start, perm);
+            } else {
+                // deep copy
+                void *src_kvaddr = page2kva(page);
+                void *dst_kvaddr = page2kva(npage);
+                memcpy(dst_kvaddr, src_kvaddr, PGSIZE);
+                ret = page_insert(to, npage, start, perm);
+            }
         }
         start += PGSIZE;
     } while (start != 0 && start < end);

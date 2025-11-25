@@ -15,6 +15,9 @@
 #include <sched.h>
 #include <sync.h>
 #include <sbi.h>
+#include <proc.h>
+#include <pmm.h>
+#include <string.h>
 
 #define TICK_NUM 100
 static size_t num = 0;
@@ -219,7 +222,34 @@ void exception_handler(struct trapframe *tf)
     case CAUSE_LOAD_PAGE_FAULT:
         cprintf("Load page fault\n");
         break;
-    case CAUSE_STORE_PAGE_FAULT:
+    case CAUSE_STORE_PAGE_FAULT:{
+        uintptr_t badaddr = read_csr(stval);
+        uintptr_t la = ROUNDDOWN(badaddr, PGSIZE);
+
+        if (current != NULL && current->mm != NULL) {
+            pte_t *ptep = get_pte(current->mm->pgdir, badaddr, 0);
+            if (ptep != NULL && (*ptep & PTE_V) && (*ptep & PTE_COW)) {
+                struct Page *page = pte2page(*ptep);
+
+                if (page_ref(page) > 1) {
+                    struct Page *npage = alloc_page();
+                    if (npage == NULL) panic("COW: out of memory");
+                    memcpy(page2kva(npage), page2kva(page), PGSIZE);
+
+                    uint32_t perm = (*ptep & PTE_USER);
+                    perm = (perm | PTE_W) & ~PTE_COW;
+                    page_insert(current->mm->pgdir, npage, la, perm);
+                } else {
+                    *ptep = (*ptep | PTE_W) & ~PTE_COW;
+                    tlb_invalidate(current->mm->pgdir, la);
+                }
+                break; // handled
+            }
+        }
+        cprintf("Store/AMO page fault\n");
+        break;
+    }
+
         cprintf("Store/AMO page fault\n");
         break;
     default:
