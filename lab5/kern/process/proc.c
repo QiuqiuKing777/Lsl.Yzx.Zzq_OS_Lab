@@ -164,15 +164,21 @@ get_proc_name(struct proc_struct *proc)
 }
 
 // set_links - set the relation links of process
+//a remarkable logic in maintaining the cptr\optr\yptr
 static void
 set_links(struct proc_struct *proc)
 {
+
     list_add(&proc_list, &(proc->list_link));
+    //proc is the youngest in its siblings,so no yptr temporarily
     proc->yptr = NULL;
+    //its older sibling is the nowa youngest child of its parent
     if ((proc->optr = proc->parent->cptr) != NULL)
     {
+        //and wanif it has a optr,optr's yptr shall be set..
         proc->optr->yptr = proc;
     }
+    //the youngest child of parent is proc self
     proc->parent->cptr = proc;
     nr_process++;
 }
@@ -184,12 +190,15 @@ remove_links(struct proc_struct *proc)
     list_del(&(proc->list_link));
     if (proc->optr != NULL)
     {
+        //its y_sib is its o_sib's y_sib
         proc->optr->yptr = proc->yptr;
     }
     if (proc->yptr != NULL)
     {
+        //its o_sib is its y_sib's o_sib
         proc->yptr->optr = proc->optr;
     }
+    //wanif tis the youngset,,
     else
     {
         proc->parent->cptr = proc->optr;
@@ -322,6 +331,8 @@ find_proc(int pid)
 // kernel_thread - create a kernel thread using "fn" function
 // NOTE: the contents of temp trapframe tf will be copied to
 //       proc->tf in do_fork-->copy_thread function
+
+//almost same as l.a.b.4
 int kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags)
 {
     struct trapframe tf;
@@ -329,7 +340,9 @@ int kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags)
     tf.gpr.s0 = (uintptr_t)fn;
     tf.gpr.s1 = (uintptr_t)arg;
     tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE;
-    tf.epc = (uintptr_t)kernel_thread_entry;
+    tf.epc = (uintptr_t)kernel_thread_entry;//defined same as lab4
+    //             0            0x00000100
+    //here our do_fork will not do
     return do_fork(clone_flags | CLONE_VM, 0, &tf);
 }
 
@@ -388,6 +401,8 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc)
     {
         return 0;
     }
+    //if clone_flags==00000100h,no need to copy because tis already a good mm
+    //CLONE_VM:CLONE using shared vm,tis anti
     if (clone_flags & CLONE_VM)
     {
         mm = oldmm;
@@ -488,16 +503,19 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
         goto bad_fork_cleanup_proc;
     }
     //    3. call copy_mm to dup OR share mm according clone_flag
+    //in l.a.b.5,we shall pay some attention 2 copy_mm
     if (copy_mm(clone_flags, proc) != 0) {
         goto bad_fork_cleanup_kstack;
     }
     //    4. call copy_thread to setup tf & context in proc_struct
     //here we set the context.re<-forkret
+    //same as l.a.b.4
     copy_thread(proc, stack, tf);
     //    5. insert proc_struct into hash_list && proc_list, set the relation links of process
     bool intr_flag;
     local_intr_save(intr_flag);  // 关中断，保护临界区
     proc->pid = get_pid();
+    //in l.a.b.5,insert and set relation links
     hash_proc(proc);
     set_links(proc);
     //list_add(&proc_list, &(proc->list_link));
@@ -533,6 +551,7 @@ bad_fork_cleanup_proc:
 //   3. call scheduler to switch to other process
 int do_exit(int error_code)
 {
+    //dont kill essential ones
     if (current == idleproc)
     {
         panic("idleproc exit.\n");
@@ -541,6 +560,7 @@ int do_exit(int error_code)
     {
         panic("initproc exit.\n");
     }
+    //clear mm
     struct mm_struct *mm = current->mm;
     if (mm != NULL)
     {
@@ -553,31 +573,38 @@ int do_exit(int error_code)
         }
         current->mm = NULL;
     }
+
     current->state = PROC_ZOMBIE;
     current->exit_code = error_code;
     bool intr_flag;
     struct proc_struct *proc;
     local_intr_save(intr_flag);
     {
+        //the sleepen init_proc in do_wait() will be awaken 
         proc = current->parent;
         if (proc->wait_state == WT_CHILD)
         {
             wakeup_proc(proc);
         }
+        //cur has child,pass em 2 initproc
         while (current->cptr != NULL)
         {
             proc = current->cptr;
             current->cptr = proc->optr;
 
             proc->yptr = NULL;
+            //exist an user_proc
             if ((proc->optr = initproc->cptr) != NULL)
             {
+                //tis actually illegal,so .cptr shall be freshed immediately
                 initproc->cptr->yptr = proc;
             }
             proc->parent = initproc;
+            //a key logic,pass all child of kid 2 init_proc *-*
             initproc->cptr = proc;
             if (proc->state == PROC_ZOMBIE)
             {
+                //if initproc is sleeping for a child
                 if (initproc->wait_state == WT_CHILD)
                 {
                     wakeup_proc(initproc);
@@ -586,6 +613,7 @@ int do_exit(int error_code)
         }
     }
     local_intr_restore(intr_flag);
+    //pass control
     schedule();
     panic("do_exit will not return!! %d.\n", current->pid);
 }
@@ -594,9 +622,12 @@ int do_exit(int error_code)
  * @binary:  the memory addr of the content of binary program
  * @size:  the size of the content of binary program
  */
+//get a brand new user mem space,and load elf
 static int
+//as for exit,tis ffff_ffff_c022_a540
 load_icode(unsigned char *binary, size_t size)
 {
+    //mem shall ve been cleared in do_execve
     if (current->mm != NULL)
     {
         panic("load_icode: current->mm must be empty.\n");
@@ -604,21 +635,23 @@ load_icode(unsigned char *binary, size_t size)
 
     int ret = -E_NO_MEM;
     struct mm_struct *mm;
-    //(1) create a new mm for current process
+    //create a new mm for current process
     if ((mm = mm_create()) == NULL)
     {
         goto bad_mm;
     }
-    //(2) create a new PDT, and mm->pgdir= kernel virtual addr of PDT
+    //create a new PDT, and mm->pgdir= kernel virtual addr of PDT
     if (setup_pgdir(mm) != 0)
     {
         goto bad_pgdir_cleanup_mm;
     }
-    //(3) copy TEXT/DATA section, build BSS parts in binary to memory space of process
+    //copy TEXT/DATA section, build BSS parts in binary to memory space of process
     struct Page *page;
+    //-------------above are some init----------------
     //(3.1) get the file header of the bianry program (ELF format)
     struct elfhdr *elf = (struct elfhdr *)binary;
-    //(3.2) get the entry of the program section headers of the bianry program (ELF format)
+    //(3.2) get the entry of the program section header *s* of the bianry program (ELF format)
+    //mark tis an entry of the list
     struct proghdr *ph = (struct proghdr *)(binary + elf->e_phoff);
     //(3.3) This program is valid?
     if (elf->e_magic != ELF_MAGIC)
@@ -627,25 +660,31 @@ load_icode(unsigned char *binary, size_t size)
         goto bad_elf_cleanup_pgdir;
     }
 
+    //for each header
     uint32_t vm_flags, perm;
-    struct proghdr *ph_end = ph + elf->e_phnum;
+    //elf->e_phnum:number of entries in program header or 0
+    struct proghdr *ph_end = ph + elf->e_phnum/* times sizeof(proghdr) */;
     for (; ph < ph_end; ph++)
     {
         //(3.4) find every program section headers
+        //in no need of load,dc
         if (ph->p_type != ELF_PT_LOAD)
         {
             continue;
         }
+        //overflow,illegal
         if (ph->p_filesz > ph->p_memsz)
         {
             ret = -E_INVAL_ELF;
             goto bad_cleanup_mmap;
         }
+        //void
         if (ph->p_filesz == 0)
         {
             // continue ;
         }
         //(3.5) call mm_map fun to setup the new vma ( ph->p_va, ph->p_memsz)
+        //set some flags and set vm
         vm_flags = 0, perm = PTE_U | PTE_V;
         if (ph->p_flags & ELF_PF_X)
             vm_flags |= VM_EXEC;
@@ -660,26 +699,34 @@ load_icode(unsigned char *binary, size_t size)
             perm |= (PTE_W | PTE_R);
         if (vm_flags & VM_EXEC)
             perm |= PTE_X;
+        //      va_used_to_map_segment--size_of_segment_in_mem
         if ((ret = mm_map(mm, ph->p_va, ph->p_memsz, vm_flags, NULL)) != 0)
         {
             goto bad_cleanup_mmap;
         }
+        //prepare 2 copy
         unsigned char *from = binary + ph->p_offset;
         size_t off, size;
         uintptr_t start = ph->p_va, end, la = ROUNDDOWN(start, PGSIZE);
 
         ret = -E_NO_MEM;
-
+        //---------------start copy-------------
         //(3.6) alloc memory, and  copy the contents of every program section (from, from+end) to process's memory (la, la+end)
         end = ph->p_va + ph->p_filesz;
         //(3.6.1) copy TEXT/DATA section of bianry program
         while (start < end)
         {
+            //alloc physicalpage for vir page la
             if ((page = pgdir_alloc_page(mm->pgdir, la, perm)) == NULL)
             {
                 goto bad_cleanup_mmap;
             }
+            //how much to cpy?PGSIZE + la - start
+            //where to start next page? la+=..
+            //off:offset of this segment in nowa page
+            //size:rest size of this page
             off = start - la, size = PGSIZE - off, la += PGSIZE;
+            //to be finishing writing
             if (end < la)
             {
                 size -= la - end;
@@ -689,11 +736,17 @@ load_icode(unsigned char *binary, size_t size)
         }
 
         //(3.6.2) build BSS section of binary program
+        //in file we have:[p_va, p_va + p_filesz (which is in start now))to copy
+        //in mem we require:[p_va, p_va + p_memsz(set as end))
+        //THUS BSS:[p_va + p_filesz, p_va + p_memsz)//uninit in file but required in mem
+        //always mark it la saves the *end* instead of start of last alloced page now!!
+        //      |       un z data      |   BSS   |  ...  |
+        //last page entry            start      end      la
         end = ph->p_va + ph->p_memsz;
-        if (start < la)
+        if (start < la)//the last page not used up entirely,we shall do zero-fill
         {
             /* ph->p_memsz == ph->p_filesz */
-            if (start == end)
+            if (start == end)//len(bss)==0..
             {
                 continue;
             }
@@ -702,10 +755,11 @@ load_icode(unsigned char *binary, size_t size)
             {
                 size -= la - end;
             }
-            memset(page2kva(page) + off, 0, size);
+            memset(page2kva(page) + off, 0, size);//zfill bss
             start += size;
             assert((end < la && start == end) || (end >= la && start == la));
         }
+        //the BSS is bridging in different pages,last z-fill
         while (start < end)
         {
             if ((page = pgdir_alloc_page(mm->pgdir, la, perm)) == NULL)
@@ -723,10 +777,13 @@ load_icode(unsigned char *binary, size_t size)
     }
     //(4) build user stack memory
     vm_flags = VM_READ | VM_WRITE | VM_STACK;
+    //256 page for user_stack
     if ((ret = mm_map(mm, USTACKTOP - USTACKSIZE, USTACKSIZE, vm_flags, NULL)) != 0)
     {
         goto bad_cleanup_mmap;
     }
+    //we have a virtual stack size of 256page,
+    //only the highest 4 v_page projected to physical page
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP - PGSIZE, PTE_USER) != NULL);
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP - 2 * PGSIZE, PTE_USER) != NULL);
     assert(pgdir_alloc_page(mm->pgdir, USTACKTOP - 3 * PGSIZE, PTE_USER) != NULL);
@@ -736,6 +793,7 @@ load_icode(unsigned char *binary, size_t size)
     mm_count_inc(mm);
     current->mm = mm;
     current->pgdir = PADDR(mm->pgdir);
+    //switch satp
     lsatp(PADDR(mm->pgdir));
 
     //(6) setup trapframe for user environment
@@ -751,14 +809,17 @@ load_icode(unsigned char *binary, size_t size)
      *          tf->status should be appropriate for user program (the value of sstatus)
      *          hint: check meaning of SPP, SPIE in SSTATUS, use them by SSTATUS_SPP, SSTATUS_SPIE(defined in risv.h)
      */
-    // user stack top
+    // user stack top,sp will be USTACKTOP after restore
+    //0x80000000
     tf->gpr.sp = USTACKTOP;
     // entry point of user program (ELF header entry)
     // elf 在 load_icode 一开始就定义了：struct elfhdr *elf = (struct elfhdr *)binary;
+    //set entry of user prog
     tf->epc = elf->e_entry;
     // setup sstatus for returning to user mode
     // 1. 清掉 SPP 位（表示 sret 返回到 U 模式而不是 S 模式）
     // 2. 置位 SPIE 位（在 sret 后开启用户态中断）
+    //key step to sret to U-mode
     sstatus &= ~SSTATUS_SPP;   // 清 SPP
     sstatus |= SSTATUS_SPIE;   // 置 SPIE
     tf->status = sstatus;
@@ -776,9 +837,10 @@ bad_mm:
 }
 
 // do_execve - call exit_mmap(mm)&put_pgdir(mm) to reclaim memory space of current process
-//           - call load_icode to setup new memory space accroding binary prog.
+//           - call load_icode to setup new memory space accroding binary program.
 int do_execve(const char *name, size_t len, unsigned char *binary, size_t size)
 {
+    //check param
     struct mm_struct *mm = current->mm;
     if (!user_mem_check(mm, (uintptr_t)name, len, 0))
     {
@@ -789,10 +851,12 @@ int do_execve(const char *name, size_t len, unsigned char *binary, size_t size)
         len = PROC_NAME_LEN;
     }
 
+    //copy name to local_name on kstack
     char local_name[PROC_NAME_LEN + 1];
     memset(local_name, 0, sizeof(local_name));
     memcpy(local_name, name, len);
 
+    //free previous mem space
     if (mm != NULL)
     {
         cputs("mm != NULL");
@@ -806,14 +870,17 @@ int do_execve(const char *name, size_t len, unsigned char *binary, size_t size)
         current->mm = NULL;
     }
     int ret;
+    //key logic,load new program
     if ((ret = load_icode(binary, size)) != 0)
     {
+        //fail in load_icode
         goto execve_exit;
     }
     set_proc_name(current, local_name);
     return 0;
 
 execve_exit:
+    //if load_icode failed,kill current
     do_exit(ret);
     panic("already exit: %e.\n", ret);
 }
@@ -831,71 +898,90 @@ int do_yield(void)
 int do_wait(int pid, int *code_store)
 {
     struct mm_struct *mm = current->mm;
+    //in init_main,skip
     if (code_store != NULL)
     {
+        //mem legal and usable or not?if not,return -E_INVAL
         if (!user_mem_check(mm, (uintptr_t)code_store, sizeof(int), 1))
         {
             return -E_INVAL;
         }
     }
-
+    //-------------------------------------------------------------------
     struct proc_struct *proc;
     bool intr_flag, haskid;
 repeat:
     haskid = 0;
+    //in init_main,skip
     if (pid != 0)
     {
         proc = find_proc(pid);
+        //proc(pid) is a legal child of current
         if (proc != NULL && proc->parent == current)
         {
             haskid = 1;
             if (proc->state == PROC_ZOMBIE)
             {
-                goto found;
+                goto found;//proc(pid) is a zombie
             }
         }
     }
     else
     {
+        //get the youngest child
         proc = current->cptr;
+        //from cur's youngest child to eldest child
         for (; proc != NULL; proc = proc->optr)
         {
-            haskid = 1;
+            haskid = 1;//actually useful only in the first loop
             if (proc->state == PROC_ZOMBIE)
             {
-                goto found;
+                goto found;//proc is a zombie
             }
         }
     }
+    //no child in PROC_ZOMBIE state
     if (haskid)
-    {
+    {   
+        //has kid and all alive,sleep and switch the controller
         current->state = PROC_SLEEPING;
+        //i m sleeping for waiting child ._zzZ
         current->wait_state = WT_CHILD;
+        //go to a child proc(mostly),in which might call do_exit,and wake_up proc(parent)
+        //in our code,user_main will run in schedule
         schedule();
+        //proc flag exiting
         if (current->flags & PF_EXITING)
         {
             do_exit(-E_KILLED);
         }
         goto repeat;
     }
+    //reachable only when no child exist
     return -E_BAD_PROC;
 
+//the zombie proc is dying --_--
 found:
     if (proc == idleproc || proc == initproc)
     {
+        //not acceptable
         panic("wait idleproc or initproc.\n");
     }
+    //in init_main,skip
     if (code_store != NULL)
     {
         *code_store = proc->exit_code;
     }
     local_intr_save(intr_flag);
     {
+        //remove from hash list
         unhash_proc(proc);
+        //set its father,,siblings..
         remove_links(proc);
     }
     local_intr_restore(intr_flag);
     put_kstack(proc);
+    //free the mem
     kfree(proc);
     return 0;
 }
@@ -908,7 +994,9 @@ int do_kill(int pid)
     {
         if (!(proc->flags & PF_EXITING))
         {
+            //last bit->1
             proc->flags |= PF_EXITING;
+            //0x0100........
             if (proc->wait_state & WT_INTERRUPTED)
             {
                 wakeup_proc(proc);
@@ -927,27 +1015,47 @@ kernel_execve(const char *name, unsigned char *binary, size_t size)
     int64_t ret = 0, len = strlen(name);
     //   ret = do_execve(name, len, binary, size);
     asm volatile(
-        "li a0, %1\n"
-        "lw a1, %2\n"
-        "lw a2, %3\n"
-        "lw a3, %4\n"
-        "lw a4, %5\n"
-        "li a7, 10\n"
-        "ebreak\n"
+        "li a0, %1\n"//"i",SYS_exec
+        "lw a1, %2\n"//m name
+        "lw a2, %3\n"//m len
+        "lw a3, %4\n"//m binary
+        "lw a4, %5\n"//m size
+        "li a7, 10\n"//sys call interrupt flag,when a7==10,ebreak will run special logic
+        "ebreak\n"   //call ebreak,
+
+        //case CAUSE_BREAKPOINT:
+        // cprintf("Breakpoint\n");
+        // if (tf->gpr.a7 == 10)    //since tis a ebreak,a7 will be stored into tf.gpr,a7
+        // {
+        //     tf->epc += 4;
+        //     syscall();
+        //                       tf  &tf + sizeof(struct(tf))
+        //     kernel_execve_ret(tf, current->kstack + KSTACKSIZE);
+        // }
+        // break;
+
         "sw a0, %0\n"
+        //%0//output
         : "=m"(ret)
+        //input
+        //%1  ==4        %2         %3        %4           %5
         : "i"(SYS_exec), "m"(name), "m"(len), "m"(binary), "m"(size)
+        //
         : "memory");
+    //write res of ebreak into ret
     cprintf("ret = %d\n", ret);
     return ret;
 }
 
+//cprintf("kernel_execve: pid = %d, name = \"%s\".\n", current->pid, exit);
+//kernel_execve(EXIT, _binary_obj__user_exit_start, (size_t)(_binary_obj___user_exit_out_size));
 #define __KERNEL_EXECVE(name, binary, size) ({           \
     cprintf("kernel_execve: pid = %d, name = \"%s\".\n", \
             current->pid, name);                         \
     kernel_execve(name, binary, (size_t)(size));         \
 })
 
+//__KERNEL_EXECVE(exit,_binary_obj__user_exit_start,_binary_obj___user_exit_out_size)
 #define KERNEL_EXECVE(x) ({                                    \
     extern unsigned char _binary_obj___user_##x##_out_start[], \
         _binary_obj___user_##x##_out_size[];                   \
@@ -975,26 +1083,44 @@ user_main(void *arg)
 }
 
 // init_main - the second kernel thread used to create user_main kernel threads
+// a new init_main,diffres from merely print in l.a.b.4
+// give birth 2 child,and kill zombies
 static int
 init_main(void *arg)
 {
+    //for check,avoid mem leak...
     size_t nr_free_pages_store = nr_free_pages();
     size_t kernel_allocated_store = kallocated();
 
+    //in the kernel_t,new a 'kernel_t' user_main
+    //idle_main.cptr->init_main
+    //                init_main.cptr->user_main
     int pid = kernel_thread(user_main, NULL, 0);
+    //shall not be idle_main neither
     if (pid <= 0)
     {
         panic("create user_main failed.\n");
     }
 
+    //para_pid=0 stand for wait for any child proc,instead of a destined one.
+    //para_code_store=NULL stand for dont return exit_code 2 user
+    //  (here,given init_main is a kernel_proc,having no user mem space)
+    //when do_wait returns 0,means have founded a zombie child and
+    //only when there is no child,it will return -E_BAD_PROC,no loop
     while (do_wait(0, NULL) == 0)
     {
-        schedule();
+        schedule(); //since ve kill a zombie,try giving the control 2 other runnable thread
+                    //current is init_main,and user_main will run
     }
+    //above are core behaviour
 
+    //if user_main exit
     cprintf("all user-mode processes have quit.\n");
+    //no child no sibling for initproc
     assert(initproc->cptr == NULL && initproc->yptr == NULL && initproc->optr == NULL);
+    //only idleproc and initproc now
     assert(nr_process == 2);
+    //proc list have but 2 elements
     assert(list_next(&proc_list) == &(initproc->list_link));
     assert(list_prev(&proc_list) == &(initproc->list_link));
 
@@ -1022,12 +1148,13 @@ void proc_init(void)
     idleproc->pid = 0;
     idleproc->state = PROC_RUNNABLE;
     idleproc->kstack = (uintptr_t)bootstack;
+    //for cpu_idle resc branch
     idleproc->need_resched = 1;
     set_proc_name(idleproc, "idle");
     nr_process++;
 
     current = idleproc;
-
+//----------------below are init_main init------------------
     int pid = kernel_thread(init_main, NULL, 0);
     if (pid <= 0)
     {
