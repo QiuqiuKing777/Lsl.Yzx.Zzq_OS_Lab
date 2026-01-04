@@ -26,6 +26,7 @@ struct iobuf;
  * vfs_open() and vfs_close(). Code above the VFS layer should not
  * need to worry about it.
  */
+//从通用的 struct inode 结构体中提取出特定文件系统（如 SFS）的私有数据结构（如 struct sfs_inode）。
 struct inode {
     union {
         struct device __device_info;
@@ -44,7 +45,7 @@ struct inode {
 #define __in_type(type)                                             inode_type_##type##_info
 
 #define check_inode_type(node, type)                                ((node)->in_type == __in_type(type))
-
+//获取 node 指针。断言 node 不为空，并且 node 的类型与请求的 type 匹配。返回 node->in_info 联合体中对应 type 的成员的地址。
 #define __vop_info(node, type)                                      \
     ({                                                              \
         struct inode *__node = (node);                              \

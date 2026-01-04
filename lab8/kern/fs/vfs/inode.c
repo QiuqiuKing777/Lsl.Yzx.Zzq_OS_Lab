@@ -11,6 +11,7 @@
 /* *
  * __alloc_inode - alloc a inode structure and initialize in_type
  * */
+//分配一个inode结构体并初始化其类型字段
 struct inode *
 __alloc_inode(int type) {
     struct inode *node;
@@ -24,6 +25,7 @@ __alloc_inode(int type) {
  * inode_init - initialize a inode structure
  * invoked by vop_init
  * */
+//初始化一个inode结构体
 void
 inode_init(struct inode *node, const struct inode_ops *ops, struct fs *fs) {
     node->ref_count = 0;
@@ -36,6 +38,7 @@ inode_init(struct inode *node, const struct inode_ops *ops, struct fs *fs) {
  * inode_kill - kill a inode structure
  * invoked by vop_kill
  * */
+//释放一个inode结构体
 void
 inode_kill(struct inode *node) {
     assert(inode_ref_count(node) == 0);
@@ -47,6 +50,7 @@ inode_kill(struct inode *node) {
  * inode_ref_inc - increment ref_count
  * invoked by vop_ref_inc
  * */
+
 int
 inode_ref_inc(struct inode *node) {
     node->ref_count += 1;
@@ -63,8 +67,8 @@ inode_ref_dec(struct inode *node) {
     assert(inode_ref_count(node) > 0);
     int ref_count, ret;
     node->ref_count-= 1;
-    ref_count = node->ref_count;
-    if (ref_count == 0) {
+    ref_count = node->ref_count;//这里获取当前引用计数
+    if (ref_count == 0) {//如果引用计数为0，说明没有任何地方再使用该inode节点了，需要调用vop_reclaim函数释放其占用的资源
         if ((ret = vop_reclaim(node)) != 0 && ret != -E_BUSY) {
             cprintf("vfs: warning: vop_reclaim: %e.\n", ret);
         }
@@ -76,6 +80,7 @@ inode_ref_dec(struct inode *node) {
  * inode_open_inc - increment the open_count
  * invoked by vop_open_inc
  * */
+//用于增加inode的打开计数
 int
 inode_open_inc(struct inode *node) {
     node->open_count += 1;
@@ -87,6 +92,7 @@ inode_open_inc(struct inode *node) {
  * invoked by vop_open_dec
  * calls vop_close if the open_count hits zero
  * */
+//用于减少inode的打开计数
 int
 inode_open_dec(struct inode *node) {
     assert(inode_open_count(node) > 0);
@@ -105,6 +111,7 @@ inode_open_dec(struct inode *node) {
  * inode_check - check the various things being valid
  * called before all vop_* calls
  * */
+//用于检查inode结构体的有效性
 void
 inode_check(struct inode *node, const char *opstr) {
     assert(node != NULL && node->in_ops != NULL);

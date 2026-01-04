@@ -13,6 +13,7 @@ static struct inode *bootfs_node = NULL;
 extern void vfs_devlist_init(void);
 
 // __alloc_fs - allocate memory for fs, and set fs type
+//用于分配并初始化一个文件系统结构体
 struct fs *
 __alloc_fs(int type) {
     struct fs *fs;
@@ -23,6 +24,7 @@ __alloc_fs(int type) {
 }
 
 // vfs_init -  vfs initialize
+//用于初始化VFS相关数据结构
 void
 vfs_init(void) {
     sem_init(&bootfs_sem, 1);
@@ -30,6 +32,7 @@ vfs_init(void) {
 }
 
 // lock_bootfs - lock  for bootfs
+//用于锁定bootfs相关操作,bootfs是系统启动时使用的根文件系统
 static void
 lock_bootfs(void) {
     down(&bootfs_sem);
@@ -41,12 +44,13 @@ unlock_bootfs(void) {
 }
 
 // change_bootfs - set the new fs inode 
+//用于更改bootfs的根目录inode节点
 static void
 change_bootfs(struct inode *node) {
     struct inode *old;
     lock_bootfs();
     {
-        old = bootfs_node, bootfs_node = node;
+        old = bootfs_node, bootfs_node = node;//保存旧的bootfs节点，并更新为新的节点
     }
     unlock_bootfs();
     if (old != NULL) {
@@ -55,6 +59,7 @@ change_bootfs(struct inode *node) {
 }
 
 // vfs_set_bootfs - change the dir of file system
+//用于设置bootfs的根目录inode节点，参数为路径字符串
 int
 vfs_set_bootfs(char *fsname) {
     struct inode *node = NULL;
@@ -76,6 +81,7 @@ vfs_set_bootfs(char *fsname) {
 }
 
 // vfs_get_bootfs - get the inode of bootfs
+//用于获取bootfs的根目录inode节点
 int
 vfs_get_bootfs(struct inode **node_store) {
     struct inode *node = NULL;

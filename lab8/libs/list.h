@@ -21,7 +21,7 @@ struct list_entry {
 typedef struct list_entry list_entry_t;
 
 static inline void list_init(list_entry_t *elm) __attribute__((always_inline));
-static inline void list_add(list_entry_t *listelm, list_entry_t *elm) __attribute__((always_inline));
+static inline void list_add(list_entry_t *listelm, list_entry_t *elm) __attribute__((always_inline));//两个参数都是链表节点，分别为要添加的位置和要添加的节点
 static inline void list_add_before(list_entry_t *listelm, list_entry_t *elm) __attribute__((always_inline));
 static inline void list_add_after(list_entry_t *listelm, list_entry_t *elm) __attribute__((always_inline));
 static inline void list_del(list_entry_t *listelm) __attribute__((always_inline));

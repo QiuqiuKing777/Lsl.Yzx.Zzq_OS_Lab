@@ -16,6 +16,7 @@
 #define IOBUF_SIZE                          4096
 
 /* copy_path - copy path name */
+//用于将用户态指针`from`指向的字符串复制到内核空间，防止用户态程序在系统调用过程中修改该字符串，导致内核态访问无效地址或数据错误
 static int
 copy_path(char **to, const char *from) {
     struct mm_struct *mm = current->mm;
@@ -24,7 +25,7 @@ copy_path(char **to, const char *from) {
         return -E_NO_MEM;
     }
     lock_mm(mm);
-    if (!copy_string(mm, buffer, from, FS_MAX_FPATH_LEN + 1)) {
+    if (!copy_string(mm, buffer, from, FS_MAX_FPATH_LEN + 1)) {//将用户态字符串复制到内核空间
         unlock_mm(mm);
         goto failed_cleanup;
     }
@@ -46,7 +47,7 @@ sysfile_open(const char *__path, uint32_t open_flags) {
     if ((ret = copy_path(&path, __path)) != 0) {
         return ret;
     }
-    ret = file_open(path, open_flags);
+    ret = file_open(path, open_flags);//调用file_open函数打开文件
     kfree(path);
     return ret;
 }
@@ -54,10 +55,11 @@ sysfile_open(const char *__path, uint32_t open_flags) {
 /* sysfile_close - close file */
 int
 sysfile_close(int fd) {
-    return file_close(fd);
+    return file_close(fd);//调用file_close函数关闭文件
 }
 
 /* sysfile_read - read file */
+//用于从文件描述符fd对应的文件中读取数据，并将数据复制到用户态缓冲区base中，读取的最大长度为len字节
 int
 sysfile_read(int fd, void *base, size_t len) {
     struct mm_struct *mm = current->mm;
@@ -75,16 +77,16 @@ sysfile_read(int fd, void *base, size_t len) {
     int ret = 0;
     size_t copied = 0, alen;
     while (len != 0) {
-        if ((alen = IOBUF_SIZE) > len) {
+        if ((alen = IOBUF_SIZE) > len) {//如果剩余长度len小于IOBUF_SIZE，则只读取len字节
             alen = len;
         }
         ret = file_read(fd, buffer, alen, &alen);
         if (alen != 0) {
             lock_mm(mm);
             {
-                if (copy_to_user(mm, base, buffer, alen)) {
+                if (copy_to_user(mm, base, buffer, alen)) {//调用copy_to_user函数将读取到的数据从内核空间复制到用户态缓冲区base中
                     assert(len >= alen);
-                    base += alen, len -= alen, copied += alen;
+                    base += alen, len -= alen, copied += alen;//更新指针和剩余长度，其中base指向下一个写入位置，len表示还需要读取的字节数，copied表示已经成功读取的字节数
                 }
                 else if (ret == 0) {
                     ret = -E_INVAL;
@@ -106,6 +108,7 @@ out:
 }
 
 /* sysfile_write - write file */
+//调用file_write函数将用户态缓冲区base中的数据写入到文件描述符fd对应的文件中，写入的最大长度为len字节
 int
 sysfile_write(int fd, void *base, size_t len) {
     struct mm_struct *mm = current->mm;
@@ -154,12 +157,14 @@ out:
 }
 
 /* sysfile_seek - seek file */
+//调用file_seek函数将文件描述符fd对应的文件的读写位置移动到指定位置pos，移动方式由whence参数指定
 int
 sysfile_seek(int fd, off_t pos, int whence) {
     return file_seek(fd, pos, whence);
 }
 
 /* sysfile_fstat - stat file */
+//用于获取文件描述符fd对应的文件的状态信息，并将状态信息复制到用户态指针__stat指向的结构体中，主要是调用了file_fstat函数获取文件状态信息
 int
 sysfile_fstat(int fd, struct stat *__stat) {
     struct mm_struct *mm = current->mm;
@@ -180,12 +185,14 @@ sysfile_fstat(int fd, struct stat *__stat) {
 }
 
 /* sysfile_fsync - sync file */
+//调用file_fsync函数将文件描述符fd对应的文件的数据和元数据同步到存储设备上，确保数据的一致性和持久性
 int
 sysfile_fsync(int fd) {
     return file_fsync(fd);
 }
 
 /* sysfile_chdir - change dir */
+//调用vfs_chdir函数将当前进程的工作目录更改为用户态指针__path指向的路径所表示的目录
 int
 sysfile_chdir(const char *__path) {
     int ret;
@@ -199,6 +206,7 @@ sysfile_chdir(const char *__path) {
 }
 
 /* sysfile_link - link file */
+//调用vfs_link函数创建一个新的硬链接，新的链接路径由用户态指针__path2指定，指向与用户态指针__path1指定的路径相同的文件
 int
 sysfile_link(const char *__path1, const char *__path2) {
     int ret;
@@ -216,6 +224,7 @@ sysfile_link(const char *__path1, const char *__path2) {
 }
 
 /* sysfile_rename - rename file */
+//调用vfs_rename函数将用户态指针__path1指定的文件重命名为用户态指针__path2指定的新名称
 int
 sysfile_rename(const char *__path1, const char *__path2) {
     int ret;
@@ -233,6 +242,7 @@ sysfile_rename(const char *__path1, const char *__path2) {
 }
 
 /* sysfile_unlink - unlink file */
+//调用vfs_unlink函数删除用户态指针__path指定的文件或目录的链接
 int
 sysfile_unlink(const char *__path) {
     int ret;
@@ -246,6 +256,7 @@ sysfile_unlink(const char *__path) {
 }
 
 /* sysfile_get cwd - get current working directory */
+//调用vfs_getcwd函数获取当前进程的工作目录，并将目录路径复制到用户态缓冲区buf中，缓冲区的长度为len字节
 int
 sysfile_getcwd(char *buf, size_t len) {
     struct mm_struct *mm = current->mm;
@@ -266,6 +277,7 @@ sysfile_getcwd(char *buf, size_t len) {
 }
 
 /* sysfile_getdirentry - get the file entry in DIR */
+//调用file_getdirentry函数从目录文件描述符fd对应的目录中读取下一个目录项，并将目录项信息复制到用户态指针__direntp指向的结构体中
 int
 sysfile_getdirentry(int fd, struct dirent *__direntp) {
     struct mm_struct *mm = current->mm;
@@ -283,7 +295,7 @@ sysfile_getdirentry(int fd, struct dirent *__direntp) {
     }
     unlock_mm(mm);
 
-    if (ret != 0 || (ret = file_getdirentry(fd, direntp)) != 0) {
+    if (ret != 0 || (ret = file_getdirentry(fd, direntp)) != 0) {//从目录文件中读取下一个目录项
         goto out;
     }
 

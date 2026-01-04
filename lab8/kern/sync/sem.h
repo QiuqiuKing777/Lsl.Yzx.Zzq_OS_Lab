@@ -11,8 +11,8 @@ typedef struct {
 } semaphore_t;
 
 void sem_init(semaphore_t *sem, int value);
-void up(semaphore_t *sem);
-void down(semaphore_t *sem);
+void up(semaphore_t *sem);//给信号量加一
+void down(semaphore_t *sem);//给信号量减一，若value小于0则阻塞
 bool try_down(semaphore_t *sem);
 
 #endif /* !__KERN_SYNC_SEM_H__ */

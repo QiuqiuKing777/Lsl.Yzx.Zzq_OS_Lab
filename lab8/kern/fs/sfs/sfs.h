@@ -65,15 +65,15 @@ struct sfs_disk_entry {
 #define sfs_dentry_size                             \
     sizeof(((struct sfs_disk_entry *)0)->name)
 
-/* inode for sfs */
+/* inode for sfs */ //文件系统的inode结构体
 struct sfs_inode {
-    struct sfs_disk_inode *din;                     /* on-disk inode */
+    struct sfs_disk_inode *din;                     /* on-disk inode */ //在磁盘上的inode结构体指针，文件系统的inode里面还有一个磁盘inode，用于存储文件的元数据
     uint32_t ino;                                   /* inode number */
     bool dirty;                                     /* true if inode modified */
     int reclaim_count;                              /* kill inode if it hits zero */
-    semaphore_t sem;                                /* semaphore for din */
-    list_entry_t inode_link;                        /* entry for linked-list in sfs_fs */
-    list_entry_t hash_link;                         /* entry for hash linked-list in sfs_fs */
+    semaphore_t sem;                                /* semaphore for din */ //用于保护对din的并发访问
+    list_entry_t inode_link;                        /* entry for linked-list in sfs_fs */ //用于将该inode节点链接到sfs文件系统的inode链表中
+    list_entry_t hash_link;                         /* entry for hash linked-list in sfs_fs */ //用于将该inode节点链接到sfs文件系统的哈希链表中
 };
 
 #define le2sin(le, member)                          \

@@ -51,15 +51,15 @@ static struct run_queue __rq;
 
 void sched_init(void)
 {
-    list_init(&timer_list);
+    list_init(&timer_list);//初始化定时器列表
 
-    sched_class = &default_sched_class;
+    sched_class = &default_sched_class;//设置调度类为默认调度类，即我们的RR调度
 
-    rq = &__rq;
-    rq->max_time_slice = MAX_TIME_SLICE;
-    sched_class->init(rq);
+    rq = &__rq;//设置运行队列指针指向静态分配的运行队列结构体
+    rq->max_time_slice = MAX_TIME_SLICE;//设置最大时间片为预定义的常量MAX_TIME_SLICE
+    sched_class->init(rq);//调用调度类的初始化函数，初始化运行队列
 
-    cprintf("sched class: %s\n", sched_class->name);
+    cprintf("sched class: %s\n", sched_class->name);//打印当前使用的调度类名称
 }
 
 void wakeup_proc(struct proc_struct *proc)
